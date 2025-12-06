@@ -26,6 +26,26 @@ class Task {
             this->id = nextId++;
         }
 
+        int getId() const {
+            return id;
+        }
+
+        int getStartTime() const {
+            return startTime;
+        }
+
+        int getDuration() const {
+            return duration;
+        }
+
+        int getEndTime() const {
+            return endTime;
+        }
+
+        ~Task() {
+            std::cout << "Task with id: " << id << " has been destroyed!" << std::endl;
+        }
+
         template <typename Executor>
         void execute(Executor& executor) {
             item->execute(executor);

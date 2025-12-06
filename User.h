@@ -4,6 +4,7 @@
 #include <string.h>
 #include "Account.h"
 #include <unordered_map>
+#include <iostream>
 
 class User {
     private:
@@ -31,6 +32,10 @@ class User {
             this->age = 25;
             this->accounts.clear();
             this->id = nextId++;
+        }
+
+        ~User() {
+            std::cout << print() << " has been destroyed!" << std::endl;
         }
 
         int getId() const {

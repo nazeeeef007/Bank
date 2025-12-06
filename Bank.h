@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <queue>
 #include <memory>
+#include <vector>
 #include "User.h"
 #include "Transaction.h"
 #include "Task.h"
@@ -12,8 +13,24 @@
 class Bank {
     private:
         std::unordered_map<int, User> users;
-        // Queue of generic transaction operations wrapped in Tasks
-        std::queue<Task<std::unique_ptr<TransactionOp>>> taskQueue;
+
+        using TaskPtr = std::unique_ptr<TransactionOp>;
+        using TaskType = Task<TaskPtr>;
+
+        struct TaskEndTimeComparator {
+            bool operator()(const std::unique_ptr<TaskType>& a, const std::unique_ptr<TaskType>& b) const {
+                // Min-heap by end time: task with smaller endTime has higher priority
+                return a->getEndTime() > b->getEndTime();
+            }
+        };
+
+        // Priority queue of generic transaction operations wrapped in Tasks,
+        // ordered by task end time (earliest end time first)
+        std::priority_queue<
+            std::unique_ptr<TaskType>,
+            std::vector<std::unique_ptr<TaskType>>,
+            TaskEndTimeComparator
+        > taskQueue;
         int queueSize;
     public:
 
@@ -22,20 +39,37 @@ class Bank {
         }
 
         Bank() = default;
+
         void enqueueTask(int startTime, int duration, std::unique_ptr<TransactionOp> op) {
             if (static_cast<int>(taskQueue.size()) >= queueSize) {
                 throw std::runtime_error("Task queue is full");
             }
-            taskQueue.emplace(startTime, duration, std::move(op));
+            auto task = std::make_unique<TaskType>(startTime, duration, std::move(op));
+            taskQueue.push(std::move(task));
         }
 
         void processNextTask() {
             if (taskQueue.empty()) {
                 return;
             }
-            Task<std::unique_ptr<TransactionOp>>& task = taskQueue.front();
+            TaskType& task = *taskQueue.top();
             task.execute(*this);
             taskQueue.pop();
+        }
+
+        bool hasPendingTasks() const {
+            return !taskQueue.empty();
+        }
+
+        void processReadyTasks(int currentTime) {
+            while (!taskQueue.empty()) {
+                TaskType& task = *taskQueue.top();
+                if (task.getEndTime() > currentTime) {
+                    break;
+                }
+                task.execute(*this);
+                taskQueue.pop();
+            }
         }
 
         void processTransaction(const Transaction & t) {

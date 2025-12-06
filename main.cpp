@@ -4,13 +4,14 @@
 #include "Bank.h"
 #include "DepositOp.h"
 #include "WithdrawOp.h"
+#include "AddUserOp.h"
 #include <iostream>
 #include <memory>
 #include <random>
 
 int main() {
-    // Create a bank with a queue capacity of 100 tasks
-    Bank bank(3);
+    // Create a bank with a queue capacity big enough for our simulation
+    Bank bank(100);
 
     try {
         // Set up some initial users and accounts
@@ -36,8 +37,9 @@ int main() {
         std::uniform_int_distribution<int> durationDist(1, 10);
 
         int currentTime = 0;
+        int totalTasks = 0;
 
-        // Enqueue a series of deposit and withdraw tasks
+        // Enqueue a series of deposit, withdraw and add-user tasks
         auto enqueueDeposit = [&](int userId, int accountId, double amount) {
             int duration = durationDist(rng);
             auto op = std::make_unique<DepositOp>(userId, accountId, amount);
@@ -48,6 +50,19 @@ int main() {
                       << " with duration " << duration
                       << " at time " << currentTime << "\n";
             currentTime += duration;
+            ++totalTasks;
+        };
+
+        auto enqueueAddUser = [&](const std::string& name, int age, double amount) {
+            int duration = durationDist(rng);
+            auto op = std::make_unique<AddUserOp>(name, age, amount);
+            bank.enqueueTask(currentTime, duration, std::move(op));
+            std::cout << "Enqueued ADDUSER '" << name << "' age " << age
+                      << " with initial balance " << amount
+                      << " and duration " << duration
+                      << " at time " << currentTime << "\n";
+            currentTime += duration;
+            ++totalTasks;
         };
 
         auto enqueueWithdraw = [&](int userId, int accountId, double amount) {
@@ -60,6 +75,7 @@ int main() {
                       << " with duration " << duration
                       << " at time " << currentTime << "\n";
             currentTime += duration;
+            ++totalTasks;
         };
 
         // We know the first three accounts created have IDs 1, 2, 3
@@ -70,7 +86,7 @@ int main() {
         int acc2Id = a2.getAccountId();
         int acc3Id = a3.getAccountId();
 
-        // Build a fixed simulation scenario
+        // A few initial tasks
         enqueueDeposit(u1Id, acc1Id, 200.0);
         enqueueWithdraw(u2Id, acc2Id, 50.0);
         enqueueDeposit(u3Id, acc3Id, 1000.0);
@@ -78,15 +94,50 @@ int main() {
         enqueueDeposit(u2Id, acc2Id, 75.0);
         enqueueWithdraw(u3Id, acc3Id, 300.0);
 
-        std::cout << "\nProcessing all queued tasks...\n\n";
-
-        // We enqueued 6 tasks above
-        for (int i = 0; i < 6; ++i) {
-            std::cout << "Processing task " << (i + 1) << "...\n";
-            bank.processNextTask();
+        // Additional deposits
+        for (int i = 0; i < 15; ++i) {
+            int userIdx = i % 3;
+            int userId = (userIdx == 0) ? u1Id : (userIdx == 1 ? u2Id : u3Id);
+            int accId  = (userIdx == 0) ? acc1Id : (userIdx == 1 ? acc2Id : acc3Id);
+            double amount = 50.0 + 10.0 * i;
+            enqueueDeposit(userId, accId, amount);
         }
 
-        std::cout << "\nSimulation complete.\n";
+        // Additional withdrawals
+        for (int i = 0; i < 15; ++i) {
+            int userIdx = i % 3;
+            int userId = (userIdx == 0) ? u1Id : (userIdx == 1 ? u2Id : u3Id);
+            int accId  = (userIdx == 0) ? acc1Id : (userIdx == 1 ? acc2Id : acc3Id);
+            double amount = 20.0 + 5.0 * i;
+            enqueueWithdraw(userId, accId, amount);
+        }
+
+        // Add a batch of new users
+        for (int i = 0; i < 12; ++i) {
+            std::string name = "User_" + std::to_string(i);
+            int age = 18 + i;
+            double initialBalance = 100.0 * (i + 1);
+            enqueueAddUser(name, age, initialBalance);
+        }
+
+        // Intentionally problematic tasks to trigger errors
+        enqueueDeposit(999, acc1Id, 100.0);          // invalid user id
+        enqueueWithdraw(u2Id, 9999, 10.0);           // invalid account id
+        enqueueDeposit(u1Id, acc1Id, -25.0);         // negative deposit amount
+        enqueueWithdraw(u3Id, acc3Id, -10.0);        // negative withdraw amount
+        enqueueWithdraw(u1Id, acc1Id, 1'000'000.0);  // withdraw more than balance
+        enqueueAddUser("BadUser", -5, 500.0);        // invalid age for new user
+
+        std::cout << "\nProcessing all " << totalTasks << " queued tasks by time...\n\n";
+
+        int simulationTime = 0;
+        while (bank.hasPendingTasks()) {
+            std::cout << "== Simulation time " << simulationTime << " ==\n";
+            bank.processReadyTasks(simulationTime);
+            ++simulationTime;
+        }
+
+        std::cout << "\nSimulation complete at time " << simulationTime << ".\n";
 
     } catch (const std::invalid_argument& e) {
         std::cerr << "Caught Exception: " << e.what() << std::endl;
